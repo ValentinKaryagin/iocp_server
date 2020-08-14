@@ -1,0 +1,37 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <ClCompile Include="iocp_server.c" />
+    <ClCompile Include="iocp_ov_socket.c">
+      <Filter>private</Filter>
+    </ClCompile>
+    <ClCompile Include="iocp_thread_worker.c">
+      <Filter>private</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="iocp_server.h" />
+    <ClInclude Include="iocp_server_ctx.h">
+      <Filter>private</Filter>
+    </ClInclude>
+    <ClInclude Include="iocp_ov_socket.h">
+      <Filter>private</Filter>
+    </ClInclude>
+    <ClInclude Include="win32_networking.h">
+      <Filter>private\platform</Filter>
+    </ClInclude>
+    <ClInclude Include="iocp_server_settings.h" />
+    <ClInclude Include="iocp_server_event_listener.h" />
+    <ClInclude Include="iocp_thread_worker.h">
+      <Filter>private</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <Filter Include="private">
+      <UniqueIdentifier>{5697b4a4-f5a2-4697-84a8-b453fa1ab052}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="private\platform">
+      <UniqueIdentifier>{6e1a8ef2-7cd2-48fd-94a5-c106854a1afd}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+</Project>

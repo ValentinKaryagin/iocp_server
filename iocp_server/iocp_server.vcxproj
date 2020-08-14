@@ -147,7 +147,6 @@
     <ClInclude Include="iocp_server.h" />
     <ClInclude Include="iocp_server_ctx.h" />
     <ClInclude Include="iocp_server_settings.h" />
-    <ClInclude Include="iocp_settings_default.h" />
     <ClInclude Include="iocp_thread_worker.h" />
     <ClInclude Include="win32_networking.h" />
   </ItemGroup>

@@ -1,14 +1,10 @@
 #include "iocp_server.h"
 
-#include "iocp_settings_default.h"
 #include "iocp_error_codes.h"
 #include "iocp_thread_worker.h"
 #include "iocp_ov_socket.h"
 
 #include "iocp_server_ctx.h"
-
-int accept_pending(IOCP_SERVER_CTX *ctx);
-void on_io(BOOL status, ULONG_PTR key, OVERLAPPED *ov_ptr, DWORD bytes_transferred, IOCP_SERVER_CTX *ctx);
 
 int iocp_server_init(IOCP_SERVER_CTX **ctx, IOCP_SERVER_SETTINGS *settings, IOCP_SERVER_EVENT_LISTENER *event_listener)
 {
@@ -151,6 +147,22 @@ int iocp_server_init(IOCP_SERVER_CTX **ctx, IOCP_SERVER_SETTINGS *settings, IOCP
 
 	if (!error_level)
 	{
+		if (!(*ctx)->event_listener.on_server_init_fptr)
+		{
+			error_level = IOCP_ERROR_ON_SERVER_INIT_FPTR_NOT_SET;
+		}
+	}
+
+	if (!error_level)
+	{
+		if (!(*ctx)->event_listener.on_server_terminate_fptr)
+		{
+			error_level = IOCP_ERROR_ON_SERVER_TERMINATE_FPTR_NOT_SET;
+		}
+	}
+
+	if (!error_level)
+	{
 		if (!(*ctx)->event_listener.on_connected_fptr)
 		{
 			error_level = IOCP_ERROR_ON_CONNECTED_FPTR_NOT_SET;
@@ -214,6 +226,10 @@ int iocp_server_init(IOCP_SERVER_CTX **ctx, IOCP_SERVER_SETTINGS *settings, IOCP
 	{
 		iocp_server_terminate(ctx);
 	}
+	else
+	{
+		(*ctx)->event_listener.on_server_init_fptr();
+	}
 
 	return error_level;
 }
@@ -221,6 +237,8 @@ int iocp_server_init(IOCP_SERVER_CTX **ctx, IOCP_SERVER_SETTINGS *settings, IOCP
 void iocp_server_terminate(IOCP_SERVER_CTX **ctx)
 {
 	(*ctx)->terminate_requested = TRUE;
+
+	(*ctx)->event_listener.on_server_terminate_fptr();
 
 	if ((*ctx)->settings.threads_count)
 	{
@@ -267,165 +285,4 @@ void iocp_server_terminate(IOCP_SERVER_CTX **ctx)
 	WSACleanup();
 
 	*ctx = NULL;
-}
-
-int accept_pending(IOCP_SERVER_CTX *ctx)
-{
-	int error_level = 0;
-
-	if (!AcceptEx(
-		ctx->listener,
-		ctx->acceptor,
-		ctx->acceptor_buffer,
-		0,
-		sizeof(SOCKADDR_IN) + 16,
-		sizeof(SOCKADDR_IN) + 16,
-		&ctx->bytes_received_on_accept,
-		&ctx->listen_ov))
-	{
-		int res = WSAGetLastError();
-		if (res != ERROR_IO_PENDING)
-		{
-			error_level = IOCP_ERROR_ACCEPT_PENDING;
-		}
-	}
-
-	return error_level;
-}
-
-void on_io(BOOL status, ULONG_PTR key, OVERLAPPED *ov_ptr, DWORD bytes_transferred, IOCP_SERVER_CTX *ctx)
-{
-	if (status)
-	{
-		if (key)
-		{
-			if (ov_ptr)
-			{
-				if (ov_ptr == &ctx->listen_ov)
-				{
-					HANDLE new_iocp_handle = INVALID_HANDLE_VALUE;
-					OV_SOCKET *ov_socket = alloc_ov_socket(ctx->acceptor, ctx);
-					if (!ov_socket)
-					{
-						return;
-					}
-
-					ctx->acceptor = WSASocket(AF_INET, SOCK_STREAM, IPPROTO_TCP, NULL, 0, WSA_FLAG_OVERLAPPED);
-					if (ctx->acceptor == INVALID_SOCKET)
-					{
-						return;
-					}
-
-					if (accept_pending(ctx) != 0)
-					{
-						return;
-					}
-
-					new_iocp_handle = CreateIoCompletionPort((HANDLE)ov_socket->s, ctx->iocp_handle, (ULONG_PTR)ov_socket, 0);
-					if (!new_iocp_handle)
-					{
-						return;
-					}
-
-					ctx->iocp_handle = new_iocp_handle;
-
-					on_connect(ov_socket, ctx);
-					
-					if (!iocp_connection_recv(ov_socket))
-					{
-						return;
-					}					
-				}
-				else
-				{
-					OV_SOCKET *ov_socket = (OV_SOCKET *)key;
-
-					if (bytes_transferred)
-					{
-						if (ov_ptr == &ov_socket->recv_overlapped)
-						{
-							on_recv(ov_socket, ctx);
-
-							_InterlockedDecrement(&ov_socket->recv_pendings_count);
-
-							ZeroMemory(ov_socket->raw_recv_buffer, ov_socket->recv_buffer.len);
-
-							if (!iocp_connection_recv(ov_socket))
-							{
-								return;
-							}
-						}
-						else if (ov_ptr == &ov_socket->send_overlapped)
-						{
-							on_send(ov_socket, ctx);
-
-							_InterlockedDecrement(&ov_socket->send_pendings_count);
-
-							ZeroMemory(ov_socket->raw_send_buffer, ov_socket->send_buffer.len);
-							ov_socket->send_buffer.len = 0;
-						}
-					}
-					else
-					{
-						if (_InterlockedExchange(&ov_socket->recv_pendings_count, ov_socket->recv_pendings_count))
-						{
-							_InterlockedDecrement(&ov_socket->recv_pendings_count);
-						}
-
-						if (_InterlockedExchange(&ov_socket->send_pendings_count, ov_socket->send_pendings_count))
-						{
-							_InterlockedDecrement(&ov_socket->send_pendings_count);
-						}
-
-						if (!_InterlockedExchange(&ov_socket->recv_pendings_count, ov_socket->recv_pendings_count) &&
-							!_InterlockedExchange(&ov_socket->send_pendings_count, ov_socket->send_pendings_count))
-						{
-							SOCKET old_s = _InterlockedExchange64(&ov_socket->s, INVALID_SOCKET);
-							if (old_s != INVALID_SOCKET)
-							{
-								shutdown(old_s, SD_BOTH);
-								closesocket(old_s);
-
-								on_disconnect(ov_socket, ctx);
-
-								release_ov_socket(&ov_socket);
-							}
-						}
-					}
-				}
-			}
-		}
-	}
-	else
-	{
-		if (key)
-		{
-			OV_SOCKET *ov_socket = (OV_SOCKET *)key;			
-
-			if (_InterlockedExchange(&ov_socket->recv_pendings_count, ov_socket->recv_pendings_count))
-			{
-				_InterlockedDecrement(&ov_socket->recv_pendings_count);
-			}
-
-			if (_InterlockedExchange(&ov_socket->send_pendings_count, ov_socket->send_pendings_count))
-			{
-				_InterlockedDecrement(&ov_socket->send_pendings_count);
-			}
-
-			if (!_InterlockedExchange(&ov_socket->recv_pendings_count, ov_socket->recv_pendings_count) &&
-				!_InterlockedExchange(&ov_socket->send_pendings_count, ov_socket->send_pendings_count))
-			{
-				SOCKET old_s = _InterlockedExchange64(&ov_socket->s, INVALID_SOCKET);
-				if (old_s != INVALID_SOCKET)
-				{
-					shutdown(old_s, SD_BOTH);
-					closesocket(old_s);
-
-					on_disconnect(ov_socket, ctx);
-
-					release_ov_socket(&ov_socket);
-				}
-			}
-		}
-	}
 }

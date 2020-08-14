@@ -1,5 +1,31 @@
 #include "iocp_ov_socket.h"
 
+#include "iocp_error_codes.h"
+
+int accept_pending(IOCP_SERVER_CTX *ctx)
+{
+	int error_level = 0;
+
+	if (!AcceptEx(
+		ctx->listener,
+		ctx->acceptor,
+		ctx->acceptor_buffer,
+		0,
+		sizeof(SOCKADDR_IN) + 16,
+		sizeof(SOCKADDR_IN) + 16,
+		&ctx->bytes_received_on_accept,
+		&ctx->listen_ov))
+	{
+		int res = WSAGetLastError();
+		if (res != ERROR_IO_PENDING)
+		{
+			error_level = IOCP_ERROR_ACCEPT_PENDING;
+		}
+	}
+
+	return error_level;
+}
+
 OV_SOCKET *alloc_ov_socket(SOCKET s, IOCP_SERVER_CTX *ctx)
 {
 	OV_SOCKET *ov_socket = (OV_SOCKET *)malloc(sizeof(OV_SOCKET));

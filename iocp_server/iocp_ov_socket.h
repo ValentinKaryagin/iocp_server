@@ -16,6 +16,7 @@ typedef struct _OV_SOCKET
 extern "C"
 {
 #endif
+	int accept_pending(IOCP_SERVER_CTX *ctx);
 	OV_SOCKET *alloc_ov_socket(SOCKET s, IOCP_SERVER_CTX *ctx);
 	void release_ov_socket(OV_SOCKET **ov_socket);
 	void on_connect(OV_SOCKET *ov_socket, IOCP_SERVER_CTX *ctx);
